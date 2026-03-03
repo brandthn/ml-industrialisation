@@ -20,17 +20,36 @@ def app():
 
 
 def test_post_sales(app):
+    data = [{"year_week": 202001, "vegetable": "tomato", "sales": 100}]
+
     with app.test_client() as client:
-        response = client.post(
-            "post_sales",
-            json=[{"year_week": 202001, "vegetable": "tomato", "sales": 100}],
-        )
+        # Post the same data twice
+        assert client.post("post_sales", json=data).status_code == 200
+        assert client.post("post_sales", json=data).status_code == 200
 
-        assert response.status_code == 200
-
-        response = client.get(
-            "get_weekly_sales",
-        )
+        response = client.get("get_weekly_sales")
         assert response.status_code == 200
 
     assert response.json == [{"year_week": 202001, "vegetable": "tomato", "sales": 100}]
+
+
+def test_get_monthly_sales(app):
+    # Use weeks that sit entirely within one month (no cross-month split needed here)
+    # 202002 = Jan 6-12, 202003 = Jan 13-19, 202006 = Feb 3-9, 202010 = Mar 2-8
+    data = [
+        {"year_week": 202002, "vegetable": "tomato", "sales": 100},
+        {"year_week": 202003, "vegetable": "tomato", "sales": 100},
+        {"year_week": 202006, "vegetable": "tomato", "sales": 100},
+        {"year_week": 202010, "vegetable": "carrot", "sales": 50},
+    ]
+
+    with app.test_client() as client:
+        assert client.post("post_sales", json=data).status_code == 200
+        response = client.get("get_monthly_sales")
+        assert response.status_code == 200
+
+    assert response.json == [
+        {"year_month": 202001, "vegetable": "tomato", "sales": 200},
+        {"year_month": 202002, "vegetable": "tomato", "sales": 100},
+        {"year_month": 202003, "vegetable": "carrot", "sales": 50},
+    ]
