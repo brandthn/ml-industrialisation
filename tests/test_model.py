@@ -134,7 +134,7 @@ def test_ridge_model_adding_yearly_mean_sales():
     assert r2 == pytest.approx(0.8412497822819137,rel=1e-3)
 
 
-def tst_ridge_model__adding_growth_factor():
+def test_ridge_model__adding_growth_factor():
     """
     We now add a growth factor as a feature.
     Growth factor is how much the item grew from year Y-1 to year.

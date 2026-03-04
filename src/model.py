@@ -7,6 +7,9 @@ def build_features(df):
     df["last_month"] = df.groupby("item_id")["sales"].shift(1)
     df["same_month_last_year"] = df.groupby("item_id")["sales"].shift(12)
     df["last_year_average"] = df.groupby("item_id")["sales"].transform(lambda x: x.shift(1).rolling(window=12).mean())
+    df["growth"] = df.groupby("item_id")["sales"].transform(
+        lambda x: x.shift(1).rolling(3).sum() / x.shift(13).rolling(3).sum()
+    )
     return df
 
 
