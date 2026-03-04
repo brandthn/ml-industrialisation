@@ -37,7 +37,7 @@ def test_model_same_month_last_year():
     pd.testing.assert_frame_equal(df_expected, df_pred)
     
 
-def tst_ridge_model():
+def test_ridge_model():
     """make_predictions is able to fit a ridge model
 
     features are:
@@ -62,7 +62,25 @@ def tst_ridge_model():
     assert r2 == pytest.approx(0.8154,rel=1e-3)
 
 
-def tst_ridge_model_adding_yearly_mean_sales():
+def test_compute_mean_sales_on_period():
+    df = pd.DataFrame({
+        "dates": ["2020-01-01", "2020-02-01", "2020-03-01", "2020-04-01",
+                  "2020-01-01", "2020-02-01", "2020-03-01", "2020-04-01"],
+        "item_id": [1, 1, 1, 1, 2, 2, 2, 2],
+        "sales": [1, 2, 3, 4, 10, 20, 30, 40],
+    })
+    period = 2
+    df = df.sort_values(["item_id", "dates"]).reset_index(drop=True)
+    df["sales_on_period"] = df.groupby("item_id")["sales"].transform(
+        lambda x: x.shift(1).rolling(window=period).mean()
+    )
+
+    expected = pd.Series([float("nan"), float("nan"), 1.5, 2.5,
+                          float("nan"), float("nan"), 15.0, 25.0], name="sales_on_period")
+    pd.testing.assert_series_equal(df["sales_on_period"], expected)
+
+
+def test_ridge_model_adding_yearly_mean_sales():
     """Adding a new feature to our sales features.
     make_predictions can now compute the features "average sales over a period"
 
