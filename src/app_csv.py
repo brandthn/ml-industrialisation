@@ -1,27 +1,22 @@
 """
-Flask app – main entry point. Uses SQLite backend by default.
-Routes only, all logic in services/data.py
+Flask app with CSV-based storage.
 """
 from flask import Flask, request, jsonify
-from services.data import SQLStore, aggregate_monthly, split_week_into_months, db
+from services.data import CSVStore, aggregate_monthly, split_week_into_months
+
+PATH_CSV = "data/raw/db.csv"
 
 
 def create_app(config=None):
     config = config or {}
     app = Flask(__name__)
 
-    if "SQLALCHEMY_DATABASE_URI" not in config:
-        config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///sales.db"
+    if "CSV_PATH" not in config:
+        config["CSV_PATH"] = PATH_CSV
 
     app.config.update(config)
 
-    store = SQLStore(app)
-
-    @app.route("/init_database", methods=["POST"])
-    def init_database():
-        """Reset the database – drop and recreate all tables."""
-        store.clear()
-        return jsonify({"status": "database initialized"}), 200
+    store = CSVStore(app.config["CSV_PATH"])
 
     @app.route("/post_sales", methods=["POST"])
     def post_sales():
@@ -44,7 +39,7 @@ def create_app(config=None):
     return app
 
 
-# backward compat for unit tests that import week_to_months from app
+# keep backward compat for unit tests
 week_to_months = split_week_into_months
 
 

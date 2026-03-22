@@ -1,6 +1,5 @@
 """
-Flask app – main entry point. Uses SQLite backend by default.
-Routes only, all logic in services/data.py
+Flask app with SQLite-based storage.
 """
 from flask import Flask, request, jsonify
 from services.data import SQLStore, aggregate_monthly, split_week_into_months, db
@@ -10,6 +9,7 @@ def create_app(config=None):
     config = config or {}
     app = Flask(__name__)
 
+    # default to a local sqlite file
     if "SQLALCHEMY_DATABASE_URI" not in config:
         config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///sales.db"
 
@@ -19,7 +19,7 @@ def create_app(config=None):
 
     @app.route("/init_database", methods=["POST"])
     def init_database():
-        """Reset the database – drop and recreate all tables."""
+        """Create or reset the database (step 8)."""
         store.clear()
         return jsonify({"status": "database initialized"}), 200
 
@@ -44,7 +44,7 @@ def create_app(config=None):
     return app
 
 
-# backward compat for unit tests that import week_to_months from app
+# keep backward compat for unit tests
 week_to_months = split_week_into_months
 
 
