@@ -1,8 +1,3 @@
-"""
-Locust load test for the sales API.
-Run: uv run locust -f locustfile.py --host http://localhost:8000
-Target: 1000 req/s (500 POST, 250 GET weekly, 250 GET monthly)
-"""
 from locust import HttpUser, task, between
 
 

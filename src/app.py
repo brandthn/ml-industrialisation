@@ -1,7 +1,3 @@
-"""
-Flask app – main entry point. Uses SQLite backend by default.
-Routes only, all logic in services/data.py
-"""
 from flask import Flask, request, jsonify
 from services.data import SQLStore, aggregate_monthly, split_week_into_months, db
 
@@ -14,37 +10,31 @@ def create_app(config=None):
         config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///sales.db"
 
     app.config.update(config)
-
     store = SQLStore(app)
 
     @app.route("/init_database", methods=["POST"])
     def init_database():
-        """Reset the database – drop and recreate all tables."""
         store.clear()
         return jsonify({"status": "database initialized"}), 200
 
     @app.route("/post_sales", methods=["POST"])
     def post_sales():
-        data = request.json
-        store.save_weekly(data)
+        store.save_weekly(request.json)
         return jsonify({"status": "success"}), 200
 
     @app.route("/get_weekly_sales", methods=["GET"])
     def get_weekly_sales():
-        records = store.load_weekly()
-        return jsonify(records), 200
+        return jsonify(store.load_weekly()), 200
 
     @app.route("/get_monthly_sales", methods=["GET"])
     def get_monthly_sales():
         remove = request.args.get("remove_outliers", "false").lower() == "true"
-        records = store.load_weekly()
-        monthly = aggregate_monthly(records, remove_outliers=remove)
+        monthly = aggregate_monthly(store.load_weekly(), remove_outliers=remove)
         return jsonify(monthly), 200
 
     return app
 
 
-# backward compat for unit tests that import week_to_months from app
 week_to_months = split_week_into_months
 
 

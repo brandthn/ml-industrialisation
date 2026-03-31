@@ -1,11 +1,9 @@
-"""Integration tests for the sales API (SQLite backend)."""
 import pytest
 from app import create_app
 
 
 @pytest.fixture
 def app():
-    # in-memory sqlite for tests – fast and isolated
     config = {
         "TESTING": True,
         "SQLALCHEMY_DATABASE_URI": "sqlite:///:memory:",
@@ -15,7 +13,6 @@ def app():
 
 
 def test_post_sales(app):
-    """Post same data twice, should only keep one record (idempotence)."""
     data = [{"year_week": 202001, "vegetable": "tomato", "sales": 100}]
 
     with app.test_client() as client:
@@ -29,8 +26,6 @@ def test_post_sales(app):
 
 
 def test_get_monthly_sales(app):
-    """Weekly data should be aggregated correctly into months."""
-    # 202002 = Jan 6-12, 202003 = Jan 13-19, 202006 = Feb 3-9, 202010 = Mar 2-8
     data = [
         {"year_week": 202002, "vegetable": "tomato", "sales": 100},
         {"year_week": 202003, "vegetable": "tomato", "sales": 100},
@@ -51,19 +46,16 @@ def test_get_monthly_sales(app):
 
 
 def test_init_database(app):
-    """init_database should clear all data."""
     data = [{"year_week": 202001, "vegetable": "tomato", "sales": 100}]
 
     with app.test_client() as client:
         client.post("post_sales", json=data)
         client.post("init_database")
-
         response = client.get("get_weekly_sales")
         assert response.json == []
 
 
-def test_post_sales_partial_valid(app):
-    """Valid records should be saved even if others in the batch are invalid."""
+def test_post_sales_multiple_records(app):
     data = [
         {"year_week": 202001, "vegetable": "tomato", "sales": 100},
         {"year_week": 202002, "vegetable": "tomato", "sales": 50},
