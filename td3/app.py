@@ -2,15 +2,56 @@ import time
 import sys
 import re
 import random
+import uuid
+import logging
 import numpy as np
 from collections import defaultdict
 import traceback
 import gc
 import threading
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, g
+
+logging.basicConfig(
+    level=logging.DEBUG,
+    format="%(asctime)s [%(levelname)s] %(message)s",
+    handlers=[
+        logging.FileHandler("td3/app.log", mode="w"),
+        logging.StreamHandler(),
+    ],
+)
+logger = logging.getLogger(__name__)
 
 _cache = {}
 _processed_items = []
+
+# Reference distribution from "training data" (word frequencies)
+TRAINING_DISTRIBUTION = {
+    "good": 0.08, "great": 0.07, "excellent": 0.05, "amazing": 0.04,
+    "wonderful": 0.03, "love": 0.06, "best": 0.05, "recommend": 0.04,
+    "bad": 0.06, "terrible": 0.04, "poor": 0.05, "awful": 0.03,
+    "horrible": 0.02, "hate": 0.03, "worst": 0.03, "avoid": 0.02,
+    "not": 0.08, "no": 0.05, "never": 0.03, "product": 0.07,
+}
+
+def get_memory_usage():
+    return (
+        sum(len(obj) for obj in _processed_items)
+        + sum(len(obj) for obj in _cache.values())
+    )
+
+
+def compute_data_drift(tokens):
+    token_counts = defaultdict(int)
+    for t in tokens:
+        token_counts[t] += 1
+    total = max(len(tokens), 1)
+    prod_dist = {w: token_counts[w] / total for w in TRAINING_DISTRIBUTION}
+    drift = sum(
+        abs(prod_dist.get(w, 0) - TRAINING_DISTRIBUTION[w])
+        for w in TRAINING_DISTRIBUTION
+    )
+    return drift
+
 
 class SentimentModel:
     negative_words = ["not", "no", "never", "neither", "nor", "without"]
@@ -111,17 +152,35 @@ class SentimentAnalyzer:
         self.request_count = 0
         self.last_gc = time.time()
     
-    def analyze(self, text):
+    def analyze(self, text, request_id=None):
         self.request_count += 1
-        
+        rid = request_id or str(uuid.uuid4())[:8]
+        start = time.time()
+        mem_before = get_memory_usage()
+
+        logger.info("[%s] New request #%d | text=%r", rid, self.request_count, text[:200])
+
         if self.request_count % 10 == 0 and time.time() - self.last_gc > 30:
             gc.collect()
             self.last_gc = time.time()
-        
+
         tokens = self.model.preprocess(text)
+        preprocess_time = time.time() - start
+        logger.debug("[%s] Preprocessing took %.4fs | %d tokens", rid, preprocess_time, len(tokens))
+
         features = self.model.featurize(tokens)
         sentiment_score = self.model.predict(features)
-        
+
+        elapsed = time.time() - start
+        mem_after = get_memory_usage()
+
+        # Data drift
+        drift = compute_data_drift(tokens)
+        if drift > 1.5:
+            logger.warning("[%s] High data drift detected: %.2f", rid, drift)
+        else:
+            logger.debug("[%s] Data drift: %.2f", rid, drift)
+
         # Categorize sentiment
         if sentiment_score >= 0.7:
             sentiment = "very positive"
@@ -133,12 +192,23 @@ class SentimentAnalyzer:
             sentiment = "negative"
         else:
             sentiment = "very negative"
-        
+
+        logger.info(
+            "[%s] Response: sentiment=%s score=%.4f | time=%.4fs | memory=%d (+%d) | tokens=%d | drift=%.2f",
+            rid, sentiment, sentiment_score, elapsed, mem_after, mem_after - mem_before, len(tokens), drift,
+        )
+
+        if elapsed > 1.0:
+            logger.warning("[%s] Slow request: %.2fs", rid, elapsed)
+        if mem_after > 5000:
+            logger.warning("[%s] High memory usage: %d", rid, mem_after)
+
         return {
             "text": text,
             "sentiment": sentiment,
             "score": float(sentiment_score),
-            "processed_tokens": len(tokens)
+            "processed_tokens": len(tokens),
+            "request_id": rid,
         }
             
 
@@ -147,24 +217,32 @@ analyzer = SentimentAnalyzer()
 
 @app.route('/analyze', methods=['POST'])
 def analyze_sentiment():
-    # Making this big try / except so you don't see the traceback
+    request_id = str(uuid.uuid4())[:8]
     try:
         data = request.get_json()
-        result = analyzer.analyze(data['text'])
+        text = data['text']
+        result = analyzer.analyze(text, request_id=request_id)
     except Exception:
-        return jsonify({"status": "there was an error"}), 500
-    
+        logger.error(
+            "[%s] Exception during analysis | input=%r\n%s",
+            request_id,
+            data.get("text", "<no text>") if 'data' in dir() else "<no data>",
+            traceback.format_exc(),
+        )
+        return jsonify({"status": "there was an error", "request_id": request_id}), 500
+
     return jsonify(result)
 
 @app.route('/health', methods=['GET'])
 def health_check():
-    """Simple health check endpoint"""
+    mem = get_memory_usage()
+    logger.info("Health check | memory_usage=%d | cache_size=%d | processed_items=%d",
+                mem, len(_cache), len(_processed_items))
+    if mem > 5000:
+        logger.warning("Memory usage is high: %d", mem)
     return jsonify({
         "status": "ok",
-        "memory_usage": (
-            sum(len(obj) for obj in _processed_items)
-            + sum(len(obj) for obj in _cache.values())
-        ),
+        "memory_usage": mem,
     })
 
 if __name__ == '__main__':
